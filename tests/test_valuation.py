@@ -86,3 +86,18 @@ def test_pick_values_decline_by_round_and_year(league, cfg):
     v = lambda y, r: league.pick_val(DraftPick(y, r, t, t))
     assert v(2027, 1) > v(2027, 2) > 0
     assert v(2027, 1) > v(2028, 1)
+
+
+def test_unranked_prospects_capped_below_ranked_when_list_loaded(league, cfg):
+    stats_only = copy.deepcopy(league.players["m0"])
+    stats_only.fv, stats_only.prospect_rank = None, None
+    stats_only.prospect_value, stats_only.hit_rate = 50.0, 0.9   # absurdly good stats line
+    rv = league.ranked_values
+    cfg.has_rankings = False
+    uncapped = dynasty.dynasty_value(stats_only, cfg, rv)
+    cfg.has_rankings = True
+    capped = dynasty.dynasty_value(stats_only, cfg, rv)
+    ranked = copy.deepcopy(stats_only)
+    ranked.prospect_rank = 20
+    assert capped < uncapped
+    assert capped < dynasty.dynasty_value(ranked, cfg, rv)

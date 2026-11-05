@@ -91,12 +91,16 @@ def is_prospect(p: Player) -> bool:
     return prospect_fv(p) is not None or p.prospect_value is not None
 
 
+# Overall prospect rank -> FV-equivalent grade.
+RANK_FV = [(1, 70), (5, 65), (15, 60), (40, 57.5), (100, 55), (200, 50), (400, 45)]
+UNRANKED_FV = 50     # unranked prospects: well outside a top-100 list
+
+
 def prospect_fv(p: Player) -> float | None:
     if p.fv:
         return p.fv
     if p.prospect_rank:
-        r = p.prospect_rank
-        return 65 if r <= 10 else 60 if r <= 40 else 55 if r <= 100 else 50
+        return _interp(RANK_FV, p.prospect_rank)
     return None
 
 
@@ -150,7 +154,13 @@ def value_by_year(p: Player, cfg: LeagueConfig, ranked_values: list[float]) -> l
         years = [max(a, b) for a, b in zip(years, prospect_value_by_year(p, cfg, ranked_values))]
     elif p.prospect_value is not None:
         # Scouting grades (FV) override the stats model when both exist.
-        years = [max(a, b) for a, b in zip(years, stats_prospect_by_year(p, cfg, offset))]
+        stats_years = stats_prospect_by_year(p, cfg, offset)
+        if cfg.has_rankings:
+            # A prospect left off the ranking list shouldn't out-value one on it.
+            ghost = Player(id="", name="", positions=p.positions, age=p.age, eta=p.eta, fv=UNRANKED_FV)
+            cap = prospect_value_by_year(ghost, cfg, ranked_values)
+            stats_years = [min(a, b) for a, b in zip(stats_years, cap)]
+        years = [max(a, b) for a, b in zip(years, stats_years)]
     return years
 
 

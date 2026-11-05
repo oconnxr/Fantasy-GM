@@ -157,7 +157,8 @@ def _match(src: Player, idx: dict[str, list[Player]]) -> Player | None:
     if len(cands) == 1:
         return cands[0]
     if len(cands) > 1:
-        same_team = [c for c in cands if c.mlb_team and c.mlb_team.upper() == src.mlb_team.upper()]
+        team = mlbstats.canon_abbr(src.mlb_team)
+        same_team = [c for c in cands if c.mlb_team and mlbstats.canon_abbr(c.mlb_team) == team]
         if len(same_team) == 1:
             return same_team[0]
         # Two-way or same-name players: match on hitter/pitcher side.
@@ -227,6 +228,7 @@ def build_league(cfg: LeagueConfig, data_dir: Path = Path("data")) -> League:
 def compute_values(league: League) -> None:
     cfg = league.cfg
     players = list(league.players.values())
+    cfg.has_rankings = any(p.prospect_rank or p.fv for p in players)
     model = value_players(players, cfg)
     league.ranked_values = rank_values(players)
     owned = league.rostered_ids()

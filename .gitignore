@@ -9,3 +9,4 @@ data/*
 # Fantrax session cookie for private leagues
 .fantrax_cookie
 .env
+!data/prospects.csv

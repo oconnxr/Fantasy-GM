@@ -69,6 +69,7 @@ class LeagueConfig:
     # Computed at build time: how far below startable replacement the last
     # rostered hitter / pitcher sits ({"H": x, "P": y}).
     depth_offsets: dict[str, float] = field(default_factory=dict)
+    has_rankings: bool = False           # a prospect list with ranks/FV is loaded
 
     @property
     def categories(self) -> list[str]:

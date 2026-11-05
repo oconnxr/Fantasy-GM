@@ -144,3 +144,15 @@ def test_obp_valued_from_walks(league, cfg):
     assert walker.stat("OBP") > base.stat("OBP")
     assert walker.cat_values["OBP"] > base.cat_values["OBP"]
     assert walker.cat_values["HR"] == base.cat_values["HR"]
+
+
+def test_prospect_list_pitcher_positions_and_rank_grades(tmp_path):
+    from fantasy_gm import dynasty
+    _write(tmp_path / "p.csv", ["Rank", "Name", "Pos", "Org", "Level", "ETA", "Age"],
+           [[1, "Top Guy", "SS", "MIL", "AA", 2027, 19], [50, "Arm Guy", "RHP", "SEA", "AA", 2027, 20],
+            [100, "Lefty", "LHP", "MIA", "AAA", 2027, 22]])
+    ps = projections.load_prospects(tmp_path / "p.csv")
+    assert [p.positions for p in ps] == [["SS"], ["SP"], ["SP"]]
+    assert all(p.is_pitcher for p in ps[1:])
+    fvs = [dynasty.prospect_fv(p) for p in ps]
+    assert fvs[0] == 70 and fvs[0] > fvs[1] > fvs[2] == 55

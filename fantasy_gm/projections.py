@@ -121,6 +121,20 @@ def load_pitchers(path: Path) -> list[Player]:
     return out
 
 
+def _prospect_positions(pos: str) -> list[str]:
+    """Prospect lists write pitchers as RHP/LHP; the GM uses SP/RP."""
+    out = []
+    for p in re.split(r"[/,]", pos.upper()) if pos else []:
+        p = p.strip()
+        if p in ("RHP", "LHP", "HP"):
+            p = "SP"
+        elif p in ("RHRP", "LHRP"):
+            p = "RP"
+        if p and p not in out:
+            out.append(p)
+    return out
+
+
 def load_prospects(path: Path) -> list[Player]:
     out = []
     for row in _read(path):
@@ -136,7 +150,7 @@ def load_prospects(path: Path) -> list[Player]:
             id=_pid(row, "pros"),
             name=name,
             mlb_team=_str(row, "Org", "Team"),
-            positions=[p.upper() for p in re.split(r"[/,]", pos) if p] if pos else [],
+            positions=_prospect_positions(pos),
             age=_num(row, "Age", default=0) or None,
             fv=fv, eta=eta, prospect_rank=rank,
             level=_str(row, "Level", "Highest Level", "Lvl"),

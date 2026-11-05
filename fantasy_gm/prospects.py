@@ -58,7 +58,9 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
     # Pair each clearly better free agent with one of your weakest prospects.
     swaps: dict[str, tuple[Player, float]] = {}
     if roster_full:
-        mine = sorted((p for p in roster if status[p.id] == MINORS), key=lambda p: league.dyn(p, mode))
+        # Never suggest dropping a ranked prospect for an unranked one.
+        mine = sorted((p for p in roster if status[p.id] == MINORS and not dynasty.prospect_fv(p)),
+                      key=lambda p: league.dyn(p, mode))
         fas = minor_free_agents(league, mode, len(mine))
         for p, (fa, fa_val) in zip(mine, fas):
             if fa_val > league.dyn(p, mode) * 1.15 + 0.5:
