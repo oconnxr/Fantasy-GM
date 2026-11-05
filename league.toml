@@ -28,8 +28,9 @@ ir_counts_toward_max = false  # TODO: confirm IR players don't count toward 48
 injured_reserve = 3           # TODO: not reported by Fantrax
 
 [minors_eligibility]
-# A player keeps minor-league eligibility while at or under these MLB career
-# totals. TODO: replace with the league's actual rule.
+# League rule: real-life status "in the minors" AND career + current regular
+# season MLB AB <= 130 AND IP <= 50 (both limits apply to every player).
+# Real-life status is checked against MLB active rosters during the season.
 max_career_ab = 130
 max_career_ip = 50
 warn_fraction = 0.8           # flag players who have used 80% of the limit

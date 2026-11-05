@@ -53,6 +53,7 @@ class Player:
     career_ab: float = 0.0               # MLB career at-bats (minors eligibility)
     career_ip: float = 0.0               # MLB career innings
     mlbam_id: int | None = None
+    on_mlb_roster: bool | None = None    # None = unknown (or offseason)
     # Stats-based prospect model: full-season MLB-equivalent line, chance of
     # reaching it, and its value (set by the league build).
     prospect_proj: dict[str, float] = field(default_factory=dict)

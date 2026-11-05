@@ -135,6 +135,7 @@ def sync(ctx, no_mlb):
     built = mlbstats.build_players(data_dir / "mlb", season)
     matched = mlbstats.match_to_fantrax({k: v for k, v in fplayers.items() if k in rostered}, built)
     mlb.fetch_people(list(matched.values()))
+    mlb.fetch_active_rosters()
     click.echo(f"Stats for {len(built)} players; {len(matched)}/{len(rostered)} rostered players matched.")
 
 

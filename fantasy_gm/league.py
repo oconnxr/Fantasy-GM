@@ -221,8 +221,32 @@ def build_league(cfg: LeagueConfig, data_dir: Path = Path("data")) -> League:
             for mp in mlb.values():
                 league.players.setdefault(mp.id, mp)
 
+    _apply_active_rosters(league, Path(data_dir) / "mlb")
     compute_values(league)
     return league
+
+
+def _apply_active_rosters(league: League, mlb_dir: Path) -> None:
+    """Mark who is on an MLB active roster -- only meaningful in season,
+    since offseason "active" rosters are really the 40-man."""
+    path = mlb_dir / "active_rosters.json"
+    if not path.exists() or not league.league_info:
+        return
+    import json
+    from datetime import date
+    data = json.loads(path.read_text())
+    try:
+        fetched = date.fromisoformat(data["date"])
+        start = date.fromisoformat(str(league.league_info["startDate"])[:10])
+        end = date.fromisoformat(str(league.league_info["endDate"])[:10])
+    except (KeyError, ValueError):
+        return
+    if not start <= fetched <= end:
+        return
+    active = set(data.get("ids", []))
+    for p in league.players.values():
+        if p.mlbam_id is not None:
+            p.on_mlb_roster = p.mlbam_id in active
 
 
 def compute_values(league: League) -> None:

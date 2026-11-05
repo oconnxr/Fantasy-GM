@@ -22,15 +22,20 @@ class ProspectReport:
 
 
 def eligibility(p: Player, cfg) -> tuple[str, float]:
-    if p.is_pitcher:
-        used, limit = p.career_ip, cfg.max_career_ip
-    else:
-        used, limit = p.career_ab, cfg.max_career_ab
-    if not limit:
+    """League rule: real-life status in the minors, AND career+current MLB
+    AB <= max_career_ab AND IP <= max_career_ip (both apply to everyone)."""
+    fracs = []
+    if cfg.max_career_ab:
+        fracs.append(p.career_ab / cfg.max_career_ab)
+    if cfg.max_career_ip:
+        fracs.append(p.career_ip / cfg.max_career_ip)
+    if not fracs:
         return "unknown", 0.0
-    frac = used / limit
+    frac = max(fracs)
     if frac > 1:
         return "lost", frac
+    if p.on_mlb_roster:
+        return "on MLB roster", frac
     if frac >= cfg.warn_fraction:
         return "warning", frac
     return "eligible", frac
@@ -75,7 +80,12 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
         dv = league.dyn(p, mode)
         worst = worst_active[p.is_pitcher]
         if elig == "lost" and status[p.id] == MINORS:
-            action, reason = "ACTIVATE OR CUT", "no longer minors-eligible"
+            limit = "AB" if p.career_ab > cfg.max_career_ab else "IP"
+            used_n = p.career_ab if limit == "AB" else p.career_ip
+            cap = cfg.max_career_ab if limit == "AB" else cfg.max_career_ip
+            action, reason = "ACTIVATE OR CUT", f"{used_n:.0f} career {limit} > {cap}: no longer minors-eligible"
+        elif elig == "on MLB roster" and status[p.id] == MINORS:
+            action, reason = "ACTIVATE", "on an MLB active roster, so not minors-eligible right now"
         elif (status[p.id] == MINORS and p.has_projection and worst is not None
               and p.value > worst.value and mode != "rebuilding"):
             action, reason = "PROMOTE", f"projects {p.value:+.1f} vs {worst.name} at {worst.value:+.1f}"
@@ -83,7 +93,7 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
             fa, fa_val = swaps[p.id]
             action, reason = "SWAP", f"for {fa.name} on waivers ({fa_val:.1f} vs {dv:.1f})"
         elif elig == "warning":
-            action, reason = "WATCH", f"used {used:.0%} of minors eligibility"
+            action, reason = "WATCH", f"used {used:.0%} of minors eligibility (130 AB / 50 IP)"
         else:
             action, reason = "STASH", _stash_reason(p, cfg)
         reports.append(ProspectReport(p, status[p.id], elig, used, action, reason, dv))

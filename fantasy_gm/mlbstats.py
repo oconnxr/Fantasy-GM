@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import date
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -116,6 +117,16 @@ class MLBClient:
         slim = {t["id"]: {"abbr": t.get("abbreviation", ""), "parent": t.get("parentOrgId"),
                           "sport": (t.get("sport") or {}).get("id")} for t in teams.get("teams", [])}
         (self.cache_dir / "teams.json").write_text(json.dumps(slim))
+
+    def fetch_active_rosters(self) -> None:
+        """MLB active-roster ids (real-life "not in the minors"), with the date."""
+        teams = self._get("teams", sportId=1).get("teams", [])
+        ids = []
+        for t in teams:
+            data = self._get(f"teams/{t['id']}/roster", rosterType="active")
+            ids += [r["person"]["id"] for r in data.get("roster", []) if r.get("person")]
+        (self.cache_dir / "active_rosters.json").write_text(
+            json.dumps({"date": date.today().isoformat(), "ids": sorted(set(ids))}))
 
     def fetch_people(self, ids: list[int]) -> None:
         """Birth dates and MLB career totals (for minors eligibility)."""

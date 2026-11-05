@@ -67,6 +67,17 @@ def test_minors_eligibility(league, cfg):
     assert prospects.eligibility(p, cfg)[0] == "lost"
 
 
+def test_eligibility_applies_both_limits_and_mlb_roster(league, cfg):
+    hitter = league.players["m1"]
+    hitter.career_ab, hitter.career_ip = 10, cfg.max_career_ip + 1   # a hitter who pitched
+    assert prospects.eligibility(hitter, cfg)[0] == "lost"
+    hitter.career_ip = 0
+    hitter.on_mlb_roster = True
+    assert prospects.eligibility(hitter, cfg)[0] == "on MLB roster"
+    hitter.on_mlb_roster = None
+    assert prospects.eligibility(hitter, cfg)[0] == "eligible"
+
+
 def test_team_report_flags_lost_eligibility(league, cfg):
     mine = [r.player_id for r in league.teams["T1"].roster if r.status == "MINORS"]
     hitter = next(league.players[i] for i in mine if league.players[i].is_hitter)
