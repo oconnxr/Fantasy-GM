@@ -1,0 +1,110 @@
+"""Minor-league management: eligibility, promote/stash/cut calls, call-up watch."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from . import dynasty
+from .models import INJURED, MINORS, Player
+
+READY_LEVELS = {"AAA", "MLB"}
+
+
+@dataclass
+class ProspectReport:
+    player: Player
+    status: str                 # roster status on your team
+    eligibility: str            # eligible / warning / lost / unknown
+    used: float                 # fraction of the eligibility limit used
+    action: str
+    reason: str
+    dynasty_value: float
+
+
+def eligibility(p: Player, cfg) -> tuple[str, float]:
+    if p.is_pitcher:
+        used, limit = p.career_ip, cfg.max_career_ip
+    else:
+        used, limit = p.career_ab, cfg.max_career_ab
+    if not limit:
+        return "unknown", 0.0
+    frac = used / limit
+    if frac > 1:
+        return "lost", frac
+    if frac >= cfg.warn_fraction:
+        return "warning", frac
+    return "eligible", frac
+
+
+def minor_free_agents(league, mode: str = "balanced", limit: int = 25) -> list[tuple[Player, float]]:
+    fas = [(p, league.dyn(p, mode)) for p in league.free_agents()
+           if dynasty.prospect_fv(p) is not None]
+    fas.sort(key=lambda x: x[1], reverse=True)
+    return fas[:limit]
+
+
+def team_report(league, team_id: str) -> list[ProspectReport]:
+    cfg = league.cfg
+    team = league.teams[team_id]
+    mode = team.mode
+    status = {r.player_id: r.status for r in team.roster}
+    roster = league.team_players(team_id)
+    active = [p for p in roster if status[p.id] not in (MINORS, INJURED) and p.has_projection]
+    worst_active = {
+        side: min((p for p in active if p.is_pitcher == side), key=lambda p: p.value, default=None)
+        for side in (True, False)
+    }
+    best_fa = next(iter(minor_free_agents(league, mode, 1)), None)
+    in_minors = sum(1 for s in status.values() if s == MINORS)
+
+    reports = []
+    for p in roster:
+        is_prospect = status[p.id] == MINORS or (dynasty.prospect_fv(p) is not None and not p.has_projection)
+        if not is_prospect:
+            continue
+        elig, used = eligibility(p, cfg)
+        dv = league.dyn(p, mode)
+        worst = worst_active[p.is_pitcher]
+        if elig == "lost" and status[p.id] == MINORS:
+            action, reason = "ACTIVATE OR CUT", "no longer minors-eligible"
+        elif (status[p.id] == MINORS and p.has_projection and worst is not None
+              and p.value > worst.value and mode != "rebuilding"):
+            action, reason = "PROMOTE", f"projects {p.value:+.1f} vs {worst.name} at {worst.value:+.1f}"
+        elif best_fa and best_fa[1] > dv * 1.15 and in_minors >= cfg.minors:
+            action, reason = "CUT", f"{best_fa[0].name} on waivers is worth {best_fa[1]:.1f} vs {dv:.1f}"
+        elif elig == "warning":
+            action, reason = "WATCH", f"used {used:.0%} of minors eligibility"
+        else:
+            action, reason = "STASH", _stash_reason(p, cfg)
+        reports.append(ProspectReport(p, status[p.id], elig, used, action, reason, dv))
+    reports.sort(key=lambda r: r.dynasty_value, reverse=True)
+    return reports
+
+
+def _stash_reason(p: Player, cfg) -> str:
+    bits = []
+    if p.fv:
+        bits.append(f"FV {p.fv:g}")
+    if p.eta:
+        bits.append(f"ETA {p.eta}")
+    if p.level:
+        bits.append(p.level)
+    return ", ".join(bits) or "developing"
+
+
+def callup_watch(league, limit: int = 20, rostered_only: bool = False) -> list[tuple[Player, str | None, float]]:
+    """Prospects close to the majors: ETA this season and at AAA (or ETA passed)."""
+    out = []
+    for p in league.players.values():
+        if dynasty.prospect_fv(p) is None:
+            continue
+        near = (p.eta is not None and p.eta <= league.cfg.season
+                and (not p.level or p.level.upper() in READY_LEVELS or p.eta < league.cfg.season))
+        if not near:
+            continue
+        owner = league.owner_of(p.id)
+        if rostered_only and owner is None:
+            continue
+        out.append((p, owner, p.dynasty_value))
+    out.sort(key=lambda x: x[2], reverse=True)
+    return out[:limit]

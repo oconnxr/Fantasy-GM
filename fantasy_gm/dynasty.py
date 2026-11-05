@@ -1,0 +1,148 @@
+"""Dynasty values: multi-year player value, prospects and draft picks.
+
+A player's dynasty value is the sum of his projected value in each of the
+next ``horizon_years`` seasons, aged along a curve, floored at zero (you can
+always cut a player), and discounted by how much the owning team cares about
+the future: contenders discount steeply, rebuilders barely at all.
+
+Prospects without an MLB projection are valued from their FV grade. The
+grade maps to the value of the MLB player at a matching overall rank, so
+prospect values automatically stay on the same scale as everyone else,
+then get multiplied by a hit rate and pushed back to their ETA.
+"""
+
+from __future__ import annotations
+
+from .config import LeagueConfig
+from .models import DraftPick, Player
+
+# Value relative to peak, by age.
+HITTER_CURVE = {20: 0.72, 21: 0.77, 22: 0.82, 23: 0.87, 24: 0.92, 25: 0.97, 26: 1.0,
+                27: 1.0, 28: 1.0, 29: 0.99, 30: 0.96, 31: 0.92, 32: 0.87, 33: 0.81,
+                34: 0.74, 35: 0.67, 36: 0.59, 37: 0.50, 38: 0.41, 39: 0.33, 40: 0.25}
+PITCHER_CURVE = {20: 0.74, 21: 0.79, 22: 0.84, 23: 0.89, 24: 0.94, 25: 0.98, 26: 1.0,
+                 27: 1.0, 28: 0.99, 29: 0.97, 30: 0.94, 31: 0.89, 32: 0.83, 33: 0.76,
+                 34: 0.69, 35: 0.61, 36: 0.53, 37: 0.45, 38: 0.37, 39: 0.30, 40: 0.23}
+
+# Prospect FV -> overall rank of an MLB player with comparable peak value in
+# a 16-team league (scaled for other sizes), and the chance he gets there.
+FV_RANK = [(80, 1), (70, 12), (65, 30), (60, 70), (55, 140), (50, 240), (45, 360), (40, 520)]
+FV_HIT_RATE = [(80, 0.9), (70, 0.8), (65, 0.7), (60, 0.6), (55, 0.5), (50, 0.4), (45, 0.3), (40, 0.2)]
+
+# Typical value of a solid regular, used to age players near replacement level.
+SCALE = 3.0
+# Even fringe prospects hold some lottery-ticket value.
+PROSPECT_PEAK_FLOOR = 0.3
+
+
+def _interp(table: list[tuple[float, float]], x: float) -> float:
+    table = sorted(table)
+    if x <= table[0][0]:
+        return table[0][1]
+    if x >= table[-1][0]:
+        return table[-1][1]
+    for (x0, y0), (x1, y1) in zip(table, table[1:]):
+        if x0 <= x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return table[-1][1]
+
+
+def age_factor(age: float, pitcher: bool) -> float:
+    curve = PITCHER_CURVE if pitcher else HITTER_CURVE
+    a = int(round(age))
+    if a < 20:
+        return curve[20]
+    if a > 40:
+        return max(0.1, curve[40] - 0.08 * (a - 40))
+    return curve[a]
+
+
+def year_weights(cfg: LeagueConfig, mode: str) -> list[float]:
+    d = cfg.discount[mode]
+    w = [d ** t for t in range(cfg.horizon_years)]
+    w[0] *= cfg.year0_weight[mode]
+    return w
+
+
+def mlb_value_by_year(p: Player, cfg: LeagueConfig) -> list[float]:
+    base = p.value
+    age = p.age or 27
+    f0 = age_factor(age, p.is_pitcher)
+    out = []
+    for t in range(cfg.horizon_years):
+        ratio = age_factor(age + t, p.is_pitcher) / f0
+        out.append(max(0.0, base + (ratio - 1) * max(base, SCALE)))
+    return out
+
+
+def prospect_fv(p: Player) -> float | None:
+    if p.fv:
+        return p.fv
+    if p.prospect_rank:
+        r = p.prospect_rank
+        return 65 if r <= 10 else 60 if r <= 40 else 55 if r <= 100 else 50
+    return None
+
+
+def prospect_value_by_year(p: Player, cfg: LeagueConfig, ranked_values: list[float]) -> list[float]:
+    fv = prospect_fv(p)
+    if fv is None or not ranked_values:
+        return [0.0] * cfg.horizon_years
+    rank = max(1, int(round(_interp(FV_RANK, fv) * cfg.teams / 16)))
+    peak = ranked_values[min(rank, len(ranked_values)) - 1]
+    expected_peak = max(PROSPECT_PEAK_FLOOR, peak) * _interp(FV_HIT_RATE, fv)
+    eta = p.eta or (cfg.season + 2)
+    age_now = p.age or 22
+    out = []
+    for t in range(cfg.horizon_years):
+        year = cfg.season + t
+        if year < eta:
+            out.append(0.0)
+            continue
+        ramp = 0.5 if year == eta else 1.0
+        # FV describes peak; scale down for seasons before age 26.
+        out.append(expected_peak * ramp * age_factor(age_now + t, p.is_pitcher))
+    return out
+
+
+def value_by_year(p: Player, cfg: LeagueConfig, ranked_values: list[float]) -> list[float]:
+    mlb = mlb_value_by_year(p, cfg) if p.has_projection else [0.0] * cfg.horizon_years
+    if prospect_fv(p) is None:
+        return mlb
+    pros = prospect_value_by_year(p, cfg, ranked_values)
+    return [max(a, b) for a, b in zip(mlb, pros)]
+
+
+def dynasty_value(p: Player, cfg: LeagueConfig, ranked_values: list[float], mode: str = "balanced") -> float:
+    return sum(v * w for v, w in zip(value_by_year(p, cfg, ranked_values), year_weights(cfg, mode)))
+
+
+# --------------------------------------------------------------------------
+# Draft picks
+# --------------------------------------------------------------------------
+
+def pick_value_curve(available_prospects: list[float], cfg: LeagueConfig) -> list[float]:
+    """Value of each overall pick in a rookie draft.
+
+    Pick k is worth the k-th best prospect not yet rostered. If there aren't
+    enough unrostered prospects, extend the curve with exponential decay.
+    """
+    n = cfg.teams * cfg.rookie_draft_rounds
+    vals = sorted(available_prospects, reverse=True)[:n]
+    if not vals:
+        vals = [3.0]
+    while len(vals) < n:
+        vals.append(vals[-1] * 0.94)
+    return vals
+
+
+def pick_value(pick: DraftPick, curve: list[float], cfg: LeagueConfig,
+               projected_slot: dict[str, int], mode: str = "balanced") -> float:
+    slot = pick.pick_number or projected_slot.get(pick.original_team_id, (cfg.teams + 1) // 2)
+    overall = (pick.round - 1) * cfg.teams + slot
+    v = curve[min(overall, len(curve)) - 1]
+    years_out = max(0, pick.year - cfg.season)
+    # Uncertainty about future slot and class, plus the team's time preference.
+    v *= 0.92 ** years_out
+    v *= cfg.discount[mode] ** years_out / cfg.discount["balanced"] ** years_out
+    return v

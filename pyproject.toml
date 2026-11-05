@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fantasy-gm"
+version = "0.1.0"
+description = "Virtual general manager for a 16-team H2H categories dynasty baseball league on Fantrax"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31", "click>=8.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+fgm = "fantasy_gm.cli:main"
+
+[tool.setuptools]
+packages = ["fantasy_gm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

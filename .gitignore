@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+# Synced league data and downloaded projections stay local
+data/*
+!data/.gitkeep
+# Fantrax session cookie for private leagues
+.fantrax_cookie
+.env
