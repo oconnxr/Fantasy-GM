@@ -40,6 +40,15 @@ def _fmt_delta(cat: str, v: float) -> str:
     return f"{v:+.1f}"
 
 
+def _pick_label(league: League, pk: DraftPick, holder: str) -> str:
+    slot = f".{pk.pick_number:02d}" if pk.pick_number else ""
+    via = ""
+    if pk.original_team_id != holder:
+        orig = league.teams.get(pk.original_team_id)
+        via = f" (via {orig.name if orig else pk.original_team_id})"
+    return f"{pk.year} R{pk.round}{slot}{via}"
+
+
 def _need_league_data(league: League) -> None:
     if not league.teams:
         raise click.ClickException("No league data. Run `fgm sync` (or check data/fantrax/).")
@@ -138,7 +147,7 @@ def roster(ctx, team):
     if t.picks:
         click.echo("Picks:")
         for pk in sorted(t.picks, key=lambda p: (p.year, p.round)):
-            click.echo(f"  {pk.label:<32} value {league.pick_val(pk, t.mode):5.1f}")
+            click.echo(f"  {_pick_label(league, pk, tid):<40} value {league.pick_val(pk, t.mode):5.1f}")
 
 
 @main.command()
@@ -276,6 +285,9 @@ def lineup(ctx, vs, two_start, games, team):
     tid = _my_team_id(league, team)
     opp = league.find_team(vs).id if vs else league.opponent_this_week(tid)
     res = optimize(league, tid, opp, _week_ctx(league, two_start, games))
+    if not res.starters:
+        raise click.ClickException("No projections loaded, so there's nothing to set a lineup from. "
+                                   "Add data/batters.csv and data/pitchers.csv (see README).")
     for slot, ps in res.starters.items():
         for p in ps:
             click.echo(f"  {slot:<4} {p}")

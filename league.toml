@@ -9,7 +9,7 @@ name = "Langley/Denison Dynasty"
 fantrax_league_id = "fyizf75fmv8807pz"
 teams = 16
 season = 2027                 # projection season
-my_team_id = ""               # your Fantrax team id; `fgm teams` lists them
+my_team_id = "uv5e6w1dmv8807ww"   # Dallas Diesel Drinkers
 
 [categories]
 # Overridden by Fantrax on sync. Current league scoring (5x5 H2H):
