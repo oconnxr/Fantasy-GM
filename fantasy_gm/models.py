@@ -52,6 +52,12 @@ class Player:
     prospect_rank: int | None = None
     career_ab: float = 0.0               # MLB career at-bats (minors eligibility)
     career_ip: float = 0.0               # MLB career innings
+    mlbam_id: int | None = None
+    # Stats-based prospect model: full-season MLB-equivalent line, chance of
+    # reaching it, and its value (set by the league build).
+    prospect_proj: dict[str, float] = field(default_factory=dict)
+    hit_rate: float | None = None
+    prospect_value: float | None = None
     # Computed by valuation.
     value: float = 0.0                   # current-season value over replacement
     cat_values: dict[str, float] = field(default_factory=dict)

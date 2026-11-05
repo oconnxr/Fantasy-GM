@@ -64,8 +64,20 @@ def year_weights(cfg: LeagueConfig, mode: str) -> list[float]:
     return w
 
 
-def mlb_value_by_year(p: Player, cfg: LeagueConfig) -> list[float]:
-    base = p.value
+def depth_offset(cfg: LeagueConfig, ranked_values: list[float], pitcher: bool | None = None) -> float:
+    """How far below startable replacement a rostered player can be and still
+    hold value. Uses the league's actual roster depth per hitter/pitcher
+    group when known, else the last player on a full active roster + bench."""
+    if pitcher is not None and cfg.depth_offsets:
+        return cfg.depth_offsets["P" if pitcher else "H"]
+    if not ranked_values:
+        return 0.0
+    rank = cfg.teams * (sum(cfg.slots.values()) + cfg.bench)
+    return max(0.0, -ranked_values[min(rank, len(ranked_values)) - 1])
+
+
+def mlb_value_by_year(p: Player, cfg: LeagueConfig, offset: float = 0.0) -> list[float]:
+    base = p.value + offset
     age = p.age or 27
     f0 = age_factor(age, p.is_pitcher)
     out = []
@@ -73,6 +85,10 @@ def mlb_value_by_year(p: Player, cfg: LeagueConfig) -> list[float]:
         ratio = age_factor(age + t, p.is_pitcher) / f0
         out.append(max(0.0, base + (ratio - 1) * max(base, SCALE)))
     return out
+
+
+def is_prospect(p: Player) -> bool:
+    return prospect_fv(p) is not None or p.prospect_value is not None
 
 
 def prospect_fv(p: Player) -> float | None:
@@ -90,6 +106,7 @@ def prospect_value_by_year(p: Player, cfg: LeagueConfig, ranked_values: list[flo
         return [0.0] * cfg.horizon_years
     rank = max(1, int(round(_interp(FV_RANK, fv) * cfg.teams / 16)))
     peak = ranked_values[min(rank, len(ranked_values)) - 1]
+    peak += depth_offset(cfg, ranked_values, p.is_pitcher)
     expected_peak = max(PROSPECT_PEAK_FLOOR, peak) * _interp(FV_HIT_RATE, fv)
     eta = p.eta or (cfg.season + 2)
     age_now = p.age or 22
@@ -105,12 +122,36 @@ def prospect_value_by_year(p: Player, cfg: LeagueConfig, ranked_values: list[flo
     return out
 
 
+def stats_prospect_by_year(p: Player, cfg: LeagueConfig, offset: float = 0.0) -> list[float]:
+    """Value from the minor-league-stats model: full-season MLE line at ETA,
+    developed along the age curve, times the chance he gets there."""
+    if p.prospect_value is None or not p.hit_rate:
+        return [0.0] * cfg.horizon_years
+    base = p.prospect_value + offset
+    age = p.age or 22
+    f0 = age_factor(age, p.is_pitcher)
+    eta = p.eta or (cfg.season + 2)
+    out = []
+    for t in range(cfg.horizon_years):
+        year = cfg.season + t
+        if year < eta:
+            out.append(0.0)
+            continue
+        ratio = age_factor(age + t, p.is_pitcher) / f0
+        v = max(0.0, base + (ratio - 1) * max(base, SCALE))
+        out.append(v * p.hit_rate * (0.5 if year == eta else 1.0))
+    return out
+
+
 def value_by_year(p: Player, cfg: LeagueConfig, ranked_values: list[float]) -> list[float]:
-    mlb = mlb_value_by_year(p, cfg) if p.has_projection else [0.0] * cfg.horizon_years
-    if prospect_fv(p) is None:
-        return mlb
-    pros = prospect_value_by_year(p, cfg, ranked_values)
-    return [max(a, b) for a, b in zip(mlb, pros)]
+    offset = depth_offset(cfg, ranked_values, p.is_pitcher)
+    years = mlb_value_by_year(p, cfg, offset) if p.has_projection else [0.0] * cfg.horizon_years
+    if prospect_fv(p) is not None:
+        years = [max(a, b) for a, b in zip(years, prospect_value_by_year(p, cfg, ranked_values))]
+    elif p.prospect_value is not None:
+        # Scouting grades (FV) override the stats model when both exist.
+        years = [max(a, b) for a, b in zip(years, stats_prospect_by_year(p, cfg, offset))]
+    return years
 
 
 def dynasty_value(p: Player, cfg: LeagueConfig, ranked_values: list[float], mode: str = "balanced") -> float:
@@ -120,6 +161,9 @@ def dynasty_value(p: Player, cfg: LeagueConfig, ranked_values: list[float], mode
 # --------------------------------------------------------------------------
 # Draft picks
 # --------------------------------------------------------------------------
+
+ROOKIE_DRAFT_MAX_AGE = 23
+
 
 def pick_value_curve(available_prospects: list[float], cfg: LeagueConfig) -> list[float]:
     """Value of each overall pick in a rookie draft.

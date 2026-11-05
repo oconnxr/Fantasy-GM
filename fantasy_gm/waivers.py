@@ -44,7 +44,7 @@ def season_targets(league, team_id: str, limit: int = 15, prospects: bool = Fals
 
     ideas = []
     for fa in league.free_agents():
-        if not fa.has_projection and not (prospects and dynasty.prospect_fv(fa) is not None):
+        if not fa.has_projection and not (prospects and dynasty.is_prospect(fa)):
             continue
         fa_season = teamstats.fit_value(fa, weights) if fa.has_projection else 0.0
         fa_dyn = league.dyn(fa, mode) / per_year

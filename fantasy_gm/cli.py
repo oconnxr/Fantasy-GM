@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from . import mlbstats
 from . import prospects as prospects_mod
 from . import trade as trade_mod
 from . import waivers as waivers_mod
@@ -105,9 +106,10 @@ def main(ctx, config, data):
 
 
 @main.command()
+@click.option("--no-mlb", is_flag=True, help="Skip the MLB Stats API download.")
 @click.pass_context
-def sync(ctx):
-    """Pull league settings, rosters, picks and players from Fantrax."""
+def sync(ctx, no_mlb):
+    """Pull the league from Fantrax and stats from the MLB Stats API."""
     cfg = LeagueConfig.load(ctx.obj["config"])
     if not cfg.fantrax_league_id:
         raise click.ClickException("Set fantrax_league_id in league.toml")
@@ -118,6 +120,22 @@ def sync(ctx):
         raise click.ClickException(str(e))
     rosters = (data.get("rosters") or {}).get("rosters") or {}
     click.echo(f"Synced {len(rosters)} rosters, {len(data.get('players') or {})} players.")
+    if no_mlb:
+        return
+    data_dir = Path(ctx.obj["data"])
+    season = int((data.get("league_info") or {}).get("seasonYear") or cfg.season)
+    seasons = [season - 1 - i for i in range(3)]
+    click.echo(f"Downloading MLB and minor-league stats for {', '.join(map(str, seasons))}...")
+    mlb = mlbstats.MLBClient(data_dir / "mlb")
+    mlb.fetch_stats(seasons)
+    # Career totals for rostered players (minors eligibility).
+    from .fantrax import parse_players
+    fplayers = parse_players(data.get("players"))
+    rostered = {str(i.get("id")) for r in rosters.values() for i in r.get("rosterItems", [])}
+    built = mlbstats.build_players(data_dir / "mlb", season)
+    matched = mlbstats.match_to_fantrax({k: v for k, v in fplayers.items() if k in rostered}, built)
+    mlb.fetch_people(list(matched.values()))
+    click.echo(f"Stats for {len(built)} players; {len(matched)}/{len(rostered)} rostered players matched.")
 
 
 @main.command()

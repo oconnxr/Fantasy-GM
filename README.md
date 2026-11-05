@@ -42,17 +42,34 @@ dev tools into a `.fantrax_cookie` file (gitignored), or set
 Then run `fgm teams`, find your team id, and put it in `league.toml` as
 `my_team_id`.
 
-### 2. Projections and prospects (CSV files in `data/`)
+### 2. Projections and prospects
 
-| File | Source suggestion | Needed columns |
-|---|---|---|
-| `batters.csv` | FanGraphs Steamer/ZiPS batters export | Name, Team, Age, PA, AB, H (or AVG), HR, RBI, SB |
-| `pitchers.csv` | FanGraphs Steamer/ZiPS pitchers export | Name, Team, Age, IP, ER or ERA, BB, H (or WHIP), W, SV, HLD, SO, GS, G |
-| `prospects.csv` | FanGraphs *The Board* export or any list | Name, Org, Pos, Age, FV, ETA, Level (Rank is accepted in place of FV) |
-| `career.csv` *(optional)* | MLB career totals | Name, AB, IP, used for minors eligibility |
+`fgm sync` also downloads three seasons of MLB and minor-league stats
+(AAA through Single-A) from the public MLB Stats API and builds the
+projections itself:
 
-Columns are matched loosely, so exports from other sites work too. Run
-`fgm status` to see how many projection rows matched a Fantrax player.
+- **MLB players: Marcel.** The last three seasons are weighted 5/4/3 for
+  hitters and 3/2/1 for pitchers, regressed toward league average and
+  adjusted for age. Playing time comes from the last two seasons.
+- **Minor leaguers: MLEs.** Minor-league stats are discounted by level
+  and folded in at reduced weight. Players aged 25 or younger with mostly
+  minor-league time also get a full-season line, which the dynasty model
+  values at their ETA. That value is multiplied by a success chance based
+  on level and how young the player is for it.
+- **Career MLB totals** feed the minors-eligibility checks.
+
+The stats model can't see tools or scouting reports, so it's weakest on
+pitching prospects and recent draftees. Scouting grades override it. Put
+any of these CSVs in `data/` (FanGraphs exports work; columns are matched
+loosely):
+
+| File | Needed columns |
+|---|---|
+| `prospects.csv` *(recommended)* | Name, Org, Pos, Age, FV, ETA, Level (Rank is accepted in place of FV) |
+| `batters.csv` | Name, Team, Age, PA, AB, H, R, HR, RBI, SB, BB, HBP, SF |
+| `pitchers.csv` | Name, Team, Age, IP, ER or ERA, BB, H (or WHIP), W, SV, HLD, SO, GS, G |
+
+Run `fgm status` to see how many rows matched a Fantrax player.
 
 ### 3. Fill in `league.toml`
 
@@ -107,6 +124,9 @@ fgm values --pos SS --fa --top 20
   and one start per SP, unless you pass `--two-start` / `--games`.
 - **This week's opponent isn't detected yet.** Pass `--vs` yourself.
 - **Two-way players are matched to one side** (hitter or pitcher).
+- **Stats-only prospect values** are rough without a `prospects.csv`.
+- **FanGraphs blocks automated downloads** (Cloudflare), so its CSVs have
+  to be downloaded by hand in a browser.
 
 ## Tests
 

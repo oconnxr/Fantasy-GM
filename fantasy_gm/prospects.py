@@ -38,7 +38,7 @@ def eligibility(p: Player, cfg) -> tuple[str, float]:
 
 def minor_free_agents(league, mode: str = "balanced", limit: int = 25) -> list[tuple[Player, float]]:
     fas = [(p, league.dyn(p, mode)) for p in league.free_agents()
-           if dynasty.prospect_fv(p) is not None]
+           if dynasty.is_prospect(p)]
     fas.sort(key=lambda x: x[1], reverse=True)
     return fas[:limit]
 
@@ -59,7 +59,7 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
 
     reports = []
     for p in roster:
-        is_prospect = status[p.id] == MINORS or (dynasty.prospect_fv(p) is not None and not p.has_projection)
+        is_prospect = status[p.id] == MINORS or (dynasty.is_prospect(p) and not p.has_projection)
         if not is_prospect:
             continue
         elig, used = eligibility(p, cfg)
@@ -96,7 +96,7 @@ def callup_watch(league, limit: int = 20, rostered_only: bool = False) -> list[t
     """Prospects close to the majors: ETA this season and at AAA (or ETA passed)."""
     out = []
     for p in league.players.values():
-        if dynasty.prospect_fv(p) is None:
+        if not dynasty.is_prospect(p):
             continue
         near = (p.eta is not None and p.eta <= league.cfg.season
                 and (not p.level or p.level.upper() in READY_LEVELS or p.eta < league.cfg.season))

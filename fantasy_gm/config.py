@@ -66,6 +66,9 @@ class LeagueConfig:
     # Fantrax team id -> contending / balanced / rebuilding. Teams not listed
     # are classified automatically from roster strength.
     mode_overrides: dict[str, str] = field(default_factory=dict)
+    # Computed at build time: how far below startable replacement the last
+    # rostered hitter / pitcher sits ({"H": x, "P": y}).
+    depth_offsets: dict[str, float] = field(default_factory=dict)
 
     @property
     def categories(self) -> list[str]:

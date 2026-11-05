@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import dynasty, fantrax, projections
+from . import dynasty, fantrax, mlbstats, projections
 from .config import LeagueConfig
 from .models import ACTIVE, INJURED, MINORS, RESERVE, DraftPick, Player, Team
 from .projections import norm_name
@@ -127,6 +127,24 @@ def _merge(target: Player, src: Player) -> None:
         target.mlb_team = src.mlb_team
 
 
+def _merge_mlb(target: Player, src: Player) -> None:
+    """Fill a Fantrax player from the MLB-stats model without overriding CSV data."""
+    target.mlbam_id = src.mlbam_id
+    if not target.has_projection and src.proj:
+        target.proj = dict(src.proj)
+    if not target.age and src.age:
+        target.age = src.age
+    if not target.positions:
+        target.positions = list(src.positions)
+    if src.prospect_proj and target.fv is None and not target.prospect_rank:
+        target.prospect_proj = dict(src.prospect_proj)
+        target.hit_rate = src.hit_rate
+        target.eta = target.eta or src.eta
+        target.level = target.level or src.level
+    if src.career_ab or src.career_ip:
+        target.career_ab, target.career_ip = src.career_ab, src.career_ip
+
+
 def _index(players: dict[str, Player]) -> dict[str, list[Player]]:
     idx: dict[str, list[Player]] = {}
     for p in players.values():
@@ -192,6 +210,16 @@ def build_league(cfg: LeagueConfig, data_dir: Path = Path("data")) -> League:
         for p in idx.get(name, []):
             p.career_ab, p.career_ip = ab, ip
 
+    # Stats-based projections fill in whatever the CSVs didn't cover.
+    mlb = mlbstats.build_players(Path(data_dir) / "mlb", cfg.season)
+    if mlb:
+        if league.teams:
+            for fid, mid in mlbstats.match_to_fantrax(league.players, mlb).items():
+                _merge_mlb(league.players[fid], mlb[mid])
+        else:
+            for mp in mlb.values():
+                league.players.setdefault(mp.id, mp)
+
     compute_values(league)
     return league
 
@@ -199,8 +227,20 @@ def build_league(cfg: LeagueConfig, data_dir: Path = Path("data")) -> League:
 def compute_values(league: League) -> None:
     cfg = league.cfg
     players = list(league.players.values())
-    value_players(players, cfg)
+    model = value_players(players, cfg)
     league.ranked_values = rank_values(players)
+    owned = league.rostered_ids()
+    cfg.depth_offsets = {}
+    if owned:
+        for key, pitch in (("H", False), ("P", True)):
+            group = sorted((p.value for p in players if p.has_projection and p.is_pitcher == pitch),
+                           reverse=True)
+            depth = sum(1 for p in players if p.id in owned and p.has_projection and p.is_pitcher == pitch)
+            cfg.depth_offsets[key] = max(0.0, -group[min(depth, len(group)) - 1]) if group and depth else 0.0
+    for p in players:
+        if p.prospect_proj:
+            line = Player(id=p.id, name=p.name, positions=p.positions, proj=p.prospect_proj)
+            p.prospect_value = model.score(line)[0]
 
     # Team modes: overrides, else by current strength (top/bottom ~30%).
     if league.teams:
@@ -215,9 +255,9 @@ def compute_values(league: League) -> None:
     for p in players:
         p.dynasty_value = league.dyn(p)
 
-    owned = league.rostered_ids()
     available = [p.dynasty_value for p in players
-                 if p.id not in owned and dynasty.prospect_fv(p) is not None]
+                 if p.id not in owned and dynasty.is_prospect(p)
+                 and (p.age or 21) <= dynasty.ROOKIE_DRAFT_MAX_AGE]
     league.pick_curve = dynasty.pick_value_curve(available, cfg)
 
 

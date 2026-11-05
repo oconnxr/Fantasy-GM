@@ -11,6 +11,7 @@ still be on waivers -- with a lower replacement level at scarce positions.
 from __future__ import annotations
 
 import statistics
+from dataclasses import dataclass, field
 
 from .config import LeagueConfig
 from .models import RATES, Player
@@ -37,10 +38,38 @@ def _pool_rates(pool: list[Player], cats: list[str]) -> dict[str, float]:
     return rates
 
 
+@dataclass
+class GroupModel:
+    cats: list[str]
+    rates: dict[str, float]
+    stats: dict[str, tuple[float, float]]      # cat -> (mean, sd) over the pool
+    replacement: float = 0.0
+    pos_replacement: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class ValuationModel:
+    """Pool statistics, so any projection can be scored on the same scale."""
+    hitters: GroupModel | None
+    pitchers: GroupModel | None
+    inverse: set[str]
+
+    def score(self, p: Player) -> tuple[float, dict[str, float]]:
+        g = self.pitchers if p.is_pitcher else self.hitters
+        if g is None:
+            return 0.0, {}
+        cv = {c: (_marginal(p, c, g.rates, self.inverse) - g.stats[c][0]) / g.stats[c][1]
+              for c in g.cats}
+        repl = g.replacement
+        if g.pos_replacement:
+            repl = min([repl] + [g.pos_replacement[x] for x in p.positions if x in g.pos_replacement])
+        return sum(cv.values()) - repl, cv
+
+
 def _score_group(players: list[Player], cats: list[str], pool_size: int, playing_time: str,
-                 inverse: set[str]) -> None:
+                 inverse: set[str]) -> GroupModel | None:
     if not players:
-        return
+        return None
     totals = {p.id: p.proj.get(playing_time, 0) for p in players}
     for _ in range(3):  # pool depends on values; a few passes converge
         pool = sorted(players, key=lambda p: totals[p.id], reverse=True)[:pool_size]
@@ -48,9 +77,7 @@ def _score_group(players: list[Player], cats: list[str], pool_size: int, playing
         stats = {}
         for cat in cats:
             vals = [_marginal(p, cat, rates, inverse) for p in pool]
-            mean = statistics.fmean(vals)
-            sd = statistics.pstdev(vals) or 1.0
-            stats[cat] = (mean, sd)
+            stats[cat] = (statistics.fmean(vals), statistics.pstdev(vals) or 1.0)
         for p in players:
             p.cat_values = {
                 c: (_marginal(p, c, rates, inverse) - stats[c][0]) / stats[c][1] for c in cats
@@ -58,6 +85,7 @@ def _score_group(players: list[Player], cats: list[str], pool_size: int, playing
             totals[p.id] = sum(p.cat_values.values())
     for p in players:
         p.value = totals[p.id]
+    return GroupModel(cats, rates, stats)
 
 
 def _replacement(players: list[Player], n: int) -> float:
@@ -69,33 +97,37 @@ def _replacement(players: list[Player], n: int) -> float:
     return ranked[n]
 
 
-def value_players(players: list[Player], cfg: LeagueConfig) -> None:
+def _is_valued(p: Player) -> bool:
+    key = "IP" if p.is_pitcher else "PA"
+    return p.proj.get(key, 0) > 0
+
+
+def value_players(players: list[Player], cfg: LeagueConfig) -> ValuationModel:
     """Set ``value`` and ``cat_values`` on every player with a projection."""
-    hitters = [p for p in players if p.is_hitter and p.proj.get("PA", 0) > 0]
-    pitchers = [p for p in players if p.is_pitcher and p.proj.get("IP", 0) > 0]
+    hitters = [p for p in players if p.is_hitter and _is_valued(p)]
+    pitchers = [p for p in players if p.is_pitcher and _is_valued(p)]
     n_h = cfg.teams * cfg.hitter_starters_per_team
     n_p = cfg.teams * cfg.pitcher_starters_per_team
 
-    _score_group(hitters, cfg.hitting_cats, n_h, "PA", cfg.inverse_cats)
-    _score_group(pitchers, cfg.pitching_cats, n_p, "IP", cfg.inverse_cats)
+    hg = _score_group(hitters, cfg.hitting_cats, n_h, "PA", cfg.inverse_cats)
+    pg = _score_group(pitchers, cfg.pitching_cats, n_p, "IP", cfg.inverse_cats)
 
-    h_repl = _replacement(hitters, n_h)
-    pos_repl = {}
-    for pos in HITTER_POSITIONS:
-        count = cfg.slots.get(pos, 0)
-        if not count:
-            continue
-        eligible = [p for p in hitters if pos in p.positions
-                    or (pos == "OF" and {"LF", "CF", "RF"} & set(p.positions))]
-        if eligible:
-            pos_repl[pos] = min(h_repl, _replacement(eligible, cfg.teams * count))
-    for p in hitters:
-        repl = min([h_repl] + [pos_repl[x] for x in p.positions if x in pos_repl])
-        p.value -= repl
-
-    p_repl = _replacement(pitchers, n_p)
-    for p in pitchers:
-        p.value -= p_repl
+    if hg:
+        hg.replacement = _replacement(hitters, n_h)
+        for pos in HITTER_POSITIONS:
+            count = cfg.slots.get(pos, 0)
+            eligible = [p for p in hitters if pos in p.positions
+                        or (pos == "OF" and {"LF", "CF", "RF"} & set(p.positions))]
+            if count and eligible:
+                hg.pos_replacement[pos] = min(hg.replacement, _replacement(eligible, cfg.teams * count))
+        for p in hitters:
+            p.value -= min([hg.replacement] + [hg.pos_replacement[x] for x in p.positions
+                                               if x in hg.pos_replacement])
+    if pg:
+        pg.replacement = _replacement(pitchers, n_p)
+        for p in pitchers:
+            p.value -= pg.replacement
+    return ValuationModel(hg, pg, set(cfg.inverse_cats))
 
 
 def rank_values(players: list[Player]) -> list[float]:
