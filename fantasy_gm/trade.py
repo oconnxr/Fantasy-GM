@@ -78,31 +78,27 @@ def _side_value(league, side: Side, mode: str) -> float:
 
 def _roster_adjustment(league, team_id: str, incoming: list[Player], outgoing: list[Player],
                        mode: str) -> tuple[float, list[Player]]:
-    """Cost of cuts forced by a roster-count change (or credit for open spots).
+    """Value change from the cuts a trade forces (or saves) against the roster limit.
 
-    Players acquired into a minors slot don't use an active spot, so only
-    MLB-projected players count toward the active roster change.
+    Teams over the limit in the offseason already owe cuts, so only the
+    change in what they'll have to cut is charged. Spots opened below the
+    limit are credited with the best free agents.
     """
-    def counts(p: Player) -> bool:
-        return p.has_projection
-
-    delta = sum(map(counts, incoming)) - sum(map(counts, outgoing))
-    if delta == 0:
-        return 0.0, []
     out_ids = {p.id for p in outgoing}
-    team = league.teams[team_id]
-    current = [league.players[r.player_id] for r in team.roster
-               if r.status != MINORS and r.player_id in league.players
-               and r.player_id not in out_ids]
-    if delta > 0:
-        open_spots = max(0, league.cfg.active_roster_size - len(current))
-        n_cut = max(0, delta - open_spots)
-        cuts = sorted(current, key=lambda p: league.dyn(p, mode))[:n_cut]
-        return -sum(league.dyn(p, mode) for p in cuts), cuts
-    # Freed spots get filled from waivers.
-    fas = sorted((league.dyn(p, mode) for p in league.free_agents() if p.has_projection),
-                 reverse=True)
-    return sum(fas[: -delta]), []
+    before = league.counted_roster(team_id)
+    after = [p for p in before if p.id not in out_ids] + list(incoming)
+    cost_before, _ = league.cut_plan(before, mode)
+    cost_after, cuts = league.cut_plan(after, mode)
+    adj = cost_before - cost_after
+    open_before = max(0, league.cfg.max_roster - len(before))
+    open_after = max(0, league.cfg.max_roster - len(after))
+    if open_after != open_before:
+        fas = sorted((league.dyn(p, mode) for p in league.free_agents()), reverse=True)
+        adj += sum(fas[:open_after]) - sum(fas[:open_before])
+    # Only report cuts the trade itself causes.
+    _, cuts_before = league.cut_plan(before, mode)
+    already = {p.id for p in cuts_before}
+    return adj, [p for p in cuts if p.id not in already]
 
 
 def analyze(league, my: Side, their: Side, find_counters: bool = True) -> TradeResult:

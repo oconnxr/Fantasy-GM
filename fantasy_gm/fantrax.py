@@ -204,10 +204,8 @@ def parse_settings(league_info: Any) -> dict[str, Any]:
         out["slots"] = slots
     ri = li.get("rosterInfo") or {}
     try:
-        total, active = int(ri["maxTotalPlayers"]), int(ri["maxTotalActivePlayers"])
-        reserve = int(ri.get("maxTotalReservePlayers", 0))
-        out["bench"] = reserve
-        out["minors"] = max(0, total - active - reserve)
+        out["max_roster"] = int(ri["maxTotalPlayers"])
+        out["bench"] = int(ri.get("maxTotalReservePlayers", 0))
     except (KeyError, TypeError, ValueError):
         pass
     if li.get("seasonYear"):

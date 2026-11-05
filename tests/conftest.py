@@ -51,7 +51,7 @@ def cfg() -> LeagueConfig:
     c.my_team_id = "T1"
     c.slots = {"C": 1, "1B": 1, "2B": 1, "3B": 1, "SS": 1, "OF": 3, "UT": 1, "SP": 5, "RP": 3, "P": 1}
     c.bench = 4
-    c.minors = 3
+    c.max_roster = 30      # every synthetic roster is exactly full
     return c
 
 

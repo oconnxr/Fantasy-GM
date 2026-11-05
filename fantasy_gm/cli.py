@@ -241,7 +241,9 @@ def prospects(ctx, team, fa_top):
     t = league.teams[tid]
     reports = prospects_mod.team_report(league, tid)
     used = sum(1 for r in t.roster if r.status == "MINORS")
-    click.echo(f"{t.name}: {used}/{league.cfg.minors} minors slots used  ({t.mode})\n")
+    total = len(league.counted_roster(tid))
+    cap = f"/{league.cfg.minors}" if league.cfg.minors else ""
+    click.echo(f"{t.name}: {used}{cap} in minors, {total}/{league.cfg.max_roster} on roster  ({t.mode})\n")
     for r in reports:
         click.echo(f"  {r.action:<15} {str(r.player):<40} dyn {r.dynasty_value:5.1f}  "
                    f"[{r.eligibility}] {r.reason}")
@@ -328,6 +330,35 @@ def waivers(ctx, week, vs, include_prospects, top, two_start, team):
         drop = i.drop.name if i.drop else "(open spot)"
         click.echo(f"  ADD {str(i.add):<40} DROP {drop:<24} score {i.score:+5.2f}  "
                    f"(season {i.season_gain:+.1f}, dynasty {i.dynasty_gain:+.1f})")
+
+
+@main.command()
+@click.option("--team", default=None)
+@click.option("--bubble", default=8, show_default=True, help="Also show this many players just above the cut line.")
+@click.pass_context
+def cutdown(ctx, team, bubble):
+    """Who to drop to get under the roster limit before the season."""
+    league = _load(ctx)
+    tid = _my_team_id(league, team)
+    t = league.teams[tid]
+    roster = league.counted_roster(tid)
+    status = {r.player_id: r.status for r in t.roster}
+    excess = len(roster) - league.cfg.max_roster
+    ir = "" if league.cfg.ir_counts_toward_max else " (IR excluded)"
+    click.echo(f"{t.name}: {len(roster)}/{league.cfg.max_roster} counted{ir}  ({t.mode})")
+    if excess <= 0:
+        click.echo(f"Under the limit with {-excess} open spot(s).")
+        return
+    ranked = sorted(roster, key=lambda p: (league.dyn(p, t.mode), p.value))
+    click.echo(f"\nDrop {excess}:")
+    for p in ranked[:excess]:
+        click.echo(f"  CUT   {status[p.id]:<9} {str(p):<42} dyn {league.dyn(p, t.mode):5.1f}  now {p.value:+5.1f}")
+    click.echo("\nOn the bubble (keep, but next in line):")
+    for p in ranked[excess:excess + bubble]:
+        click.echo(f"  KEEP  {status[p.id]:<9} {str(p):<42} dyn {league.dyn(p, t.mode):5.1f}  now {p.value:+5.1f}")
+    if not any(p.has_projection or p.fv for p in roster):
+        click.echo("\nWarning: no projections or prospect grades loaded, so these values are all 0 "
+                   "and the order is arbitrary.")
 
 
 @main.command()

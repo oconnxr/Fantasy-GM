@@ -48,8 +48,10 @@ class LeagueConfig:
         }
     )
     bench: int = 6
-    minors: int = 10
+    minors: int = 0                      # separate minors-slot cap; 0 = none
     injured_reserve: int = 3
+    max_roster: int = 48                 # total roster limit (enforced in season)
+    ir_counts_toward_max: bool = False
     max_career_ab: int = 130
     max_career_ip: int = 50
     warn_fraction: float = 0.8
@@ -105,6 +107,8 @@ class LeagueConfig:
         cfg.bench = int(roster.get("bench", cfg.bench))
         cfg.minors = int(roster.get("minors", cfg.minors))
         cfg.injured_reserve = int(roster.get("injured_reserve", cfg.injured_reserve))
+        cfg.max_roster = int(roster.get("max_roster", cfg.max_roster))
+        cfg.ir_counts_toward_max = bool(roster.get("ir_counts_toward_max", cfg.ir_counts_toward_max))
         cfg.max_career_ab = int(me.get("max_career_ab", cfg.max_career_ab))
         cfg.max_career_ip = int(me.get("max_career_ip", cfg.max_career_ip))
         cfg.warn_fraction = float(me.get("warn_fraction", cfg.warn_fraction))

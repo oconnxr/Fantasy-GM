@@ -19,9 +19,12 @@ inverse = ["ERA", "WHIP"]
 
 [roster]
 # Overridden by Fantrax on sync (19 active / 14 reserve / 48 total).
+# The 48-man limit is enforced in season only; minors count toward it.
 slots = { C = 1, "1B" = 1, "2B" = 1, "3B" = 1, SS = 1, INF = 1, OF = 3, UT = 2, SP = 3, RP = 2, P = 3 }
 bench = 14
-minors = 15
+max_roster = 48
+minors = 0                    # no separate minors-slot cap
+ir_counts_toward_max = false  # TODO: confirm IR players don't count toward 48
 injured_reserve = 3           # TODO: not reported by Fantrax
 
 [minors_eligibility]

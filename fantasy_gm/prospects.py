@@ -55,7 +55,7 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
         for side in (True, False)
     }
     best_fa = next(iter(minor_free_agents(league, mode, 1)), None)
-    in_minors = sum(1 for s in status.values() if s == MINORS)
+    roster_full = len(league.counted_roster(team_id)) >= cfg.max_roster
 
     reports = []
     for p in roster:
@@ -70,7 +70,7 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
         elif (status[p.id] == MINORS and p.has_projection and worst is not None
               and p.value > worst.value and mode != "rebuilding"):
             action, reason = "PROMOTE", f"projects {p.value:+.1f} vs {worst.name} at {worst.value:+.1f}"
-        elif best_fa and best_fa[1] > dv * 1.15 and in_minors >= cfg.minors:
+        elif best_fa and best_fa[1] > dv * 1.15 and roster_full:
             action, reason = "CUT", f"{best_fa[0].name} on waivers is worth {best_fa[1]:.1f} vs {dv:.1f}"
         elif elig == "warning":
             action, reason = "WATCH", f"used {used:.0%} of minors eligibility"

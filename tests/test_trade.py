@@ -71,7 +71,26 @@ def test_find_trades_returns_mutual_wins(league):
         assert league.owner_of(give.id) == "T1" and league.owner_of(get.id) == tid
 
 
-def test_minors_players_do_not_force_cuts(league):
+def test_minors_players_count_toward_roster_limit(league):
     prospect = next(p for p in league.team_players("T2") if not p.has_projection)
     r = trade.analyze(league, trade.Side("T1", []), trade.Side("T2", [prospect]))
-    assert r.my_roster_adj == 0 and not r.my_cuts
+    assert len(r.my_cuts) == 1 and r.my_cuts[0].id != prospect.id
+
+
+def test_offseason_overage_only_charges_extra_cuts(league):
+    # T1 is 3 over the limit already; a 1-for-1 shouldn't charge for those cuts.
+    league.cfg.max_roster = 27
+    give = max((p for p in league.team_players("T1") if p.has_projection), key=lambda p: league.dyn(p))
+    get = max((p for p in league.team_players("T2") if p.has_projection), key=lambda p: league.dyn(p))
+    r = trade.analyze(league, trade.Side("T1", [give]), trade.Side("T2", [get]))
+    assert not r.my_cuts and not r.their_cuts
+    assert r.my_roster_adj == 0 and r.their_roster_adj == 0
+
+
+def test_ir_excluded_from_roster_limit(league):
+    from fantasy_gm.models import INJURED
+    n = len(league.counted_roster("T1"))
+    league.teams["T1"].roster[0].status = INJURED
+    assert len(league.counted_roster("T1")) == n - 1
+    league.cfg.ir_counts_toward_max = True
+    assert len(league.counted_roster("T1")) == n

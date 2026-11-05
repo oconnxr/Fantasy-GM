@@ -15,6 +15,7 @@ league on Fantrax, with minor leagues and tradeable rookie draft picks.
 | `fgm callups` | Lists prospects at AAA whose ETA is this season, and who owns them. |
 | `fgm lineup --vs TEAM` | Builds the legal weekly lineup that maximizes expected categories won against this week's opponent. Two-start pitchers are supported. |
 | `fgm waivers` | Ranks waiver adds with a suggested drop. Season mode blends category fit with dynasty value by team mode. `--week --vs TEAM` ranks by the change in expected categories won this week. |
+| `fgm cutdown` | Who to drop to get under the 48-man limit before the season, plus the players just above the cut line. |
 | `fgm values` / `roster` / `teams` / `status` | Rankings, rosters with pick values, team modes, and a check of what data is loaded. |
 
 ## Setup

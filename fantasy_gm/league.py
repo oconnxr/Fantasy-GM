@@ -73,6 +73,21 @@ class League:
             raise KeyError(f"Team '{query}' matched {len(hits)} teams")
         return hits[0]
 
+    def counted_roster(self, team_id: str) -> list[Player]:
+        """Players who count toward the total roster limit."""
+        skip = set() if self.cfg.ir_counts_toward_max else {INJURED}
+        t = self.teams[team_id]
+        return [self.players[r.player_id] for r in t.roster
+                if r.status not in skip and r.player_id in self.players]
+
+    def cut_plan(self, players: list[Player], mode: str) -> tuple[float, list[Player]]:
+        """Cheapest cuts to get a roster down to the limit, and their total value."""
+        excess = len(players) - self.cfg.max_roster
+        if excess <= 0:
+            return 0.0, []
+        cuts = sorted(players, key=lambda p: (self.dyn(p, mode), p.value))[:excess]
+        return sum(self.dyn(p, mode) for p in cuts), cuts
+
     @property
     def my_team(self) -> Team:
         if not self.cfg.my_team_id or self.cfg.my_team_id not in self.teams:

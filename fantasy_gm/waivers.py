@@ -29,10 +29,8 @@ class WaiverIdea:
 
 def droppable(league, team_id: str, n: int = 5) -> list[Player]:
     mode = league.teams[team_id].mode
-    team = league.teams[team_id]
-    ps = [league.players[r.player_id] for r in team.roster
-          if r.status not in (MINORS, INJURED) and r.player_id in league.players]
-    return sorted(ps, key=lambda p: league.dyn(p, mode))[:n]
+    # Anyone counting toward the roster limit can be dropped, minors included.
+    return sorted(league.counted_roster(team_id), key=lambda p: league.dyn(p, mode))[:n]
 
 
 def season_targets(league, team_id: str, limit: int = 15, prospects: bool = False) -> list[WaiverIdea]:
@@ -42,7 +40,7 @@ def season_targets(league, team_id: str, limit: int = 15, prospects: bool = Fals
     per_year = sum(dynasty.year_weights(league.cfg, mode)) or 1.0
     drops = droppable(league, team_id)
     team = league.teams[team_id]
-    open_spot = len([r for r in team.roster if r.status not in (MINORS, INJURED)]) < league.cfg.active_roster_size
+    open_spot = len(league.counted_roster(team_id)) < league.cfg.max_roster
 
     ideas = []
     for fa in league.free_agents():

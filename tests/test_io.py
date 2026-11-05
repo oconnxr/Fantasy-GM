@@ -111,7 +111,7 @@ def test_parse_settings():
     assert s["hitting_cats"] == ["R", "HR", "OBP"]
     assert s["pitching_cats"] == ["ERA", "K", "WHIP"]
     assert s["inverse_cats"] == {"ERA", "WHIP"}
-    assert s["bench"] == 14 and s["minors"] == 15
+    assert s["bench"] == 14 and s["max_roster"] == 48
     assert s["slots"] == {"INF": 1, "UT": 2}
     assert s["season"] == 2027 and s["name"] == "Test League"
 
