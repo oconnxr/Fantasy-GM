@@ -16,7 +16,7 @@ class ProspectReport:
     status: str                 # roster status on your team
     eligibility: str            # eligible / warning / lost / unknown
     used: float                 # fraction of the eligibility limit used
-    action: str
+    action: str                 # ACTIVATE OR CUT / PROMOTE / SWAP / WATCH / STASH
     reason: str
     dynasty_value: float
 
@@ -54,8 +54,15 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
         side: min((p for p in active if p.is_pitcher == side), key=lambda p: p.value, default=None)
         for side in (True, False)
     }
-    best_fa = next(iter(minor_free_agents(league, mode, 1)), None)
     roster_full = len(league.counted_roster(team_id)) >= cfg.max_roster
+    # Pair each clearly better free agent with one of your weakest prospects.
+    swaps: dict[str, tuple[Player, float]] = {}
+    if roster_full:
+        mine = sorted((p for p in roster if status[p.id] == MINORS), key=lambda p: league.dyn(p, mode))
+        fas = minor_free_agents(league, mode, len(mine))
+        for p, (fa, fa_val) in zip(mine, fas):
+            if fa_val > league.dyn(p, mode) * 1.15 + 0.5:
+                swaps[p.id] = (fa, fa_val)
 
     reports = []
     for p in roster:
@@ -70,8 +77,9 @@ def team_report(league, team_id: str) -> list[ProspectReport]:
         elif (status[p.id] == MINORS and p.has_projection and worst is not None
               and p.value > worst.value and mode != "rebuilding"):
             action, reason = "PROMOTE", f"projects {p.value:+.1f} vs {worst.name} at {worst.value:+.1f}"
-        elif best_fa and best_fa[1] > dv * 1.15 and roster_full:
-            action, reason = "CUT", f"{best_fa[0].name} on waivers is worth {best_fa[1]:.1f} vs {dv:.1f}"
+        elif p.id in swaps:
+            fa, fa_val = swaps[p.id]
+            action, reason = "SWAP", f"for {fa.name} on waivers ({fa_val:.1f} vs {dv:.1f})"
         elif elig == "warning":
             action, reason = "WATCH", f"used {used:.0%} of minors eligibility"
         else:

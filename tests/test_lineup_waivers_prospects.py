@@ -73,7 +73,7 @@ def test_team_report_flags_lost_eligibility(league, cfg):
     hitter.career_ab = cfg.max_career_ab + 50
     report = {r.player.id: r for r in prospects.team_report(league, "T1")}
     assert report[hitter.id].action == "ACTIVATE OR CUT"
-    assert all(r.action in {"ACTIVATE OR CUT", "PROMOTE", "CUT", "WATCH", "STASH"} for r in report.values())
+    assert all(r.action in {"ACTIVATE OR CUT", "PROMOTE", "SWAP", "WATCH", "STASH"} for r in report.values())
 
 
 def test_minor_free_agents_are_unrostered(league):
