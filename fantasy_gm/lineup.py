@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass, field
 
 from .config import HITTER_SLOTS, SLOT_ELIGIBILITY
-from .models import INJURED, MINORS, Player
+from .models import INJURED, MINORS, RATES, Player, cat_value
 
 SEASON_DAYS = 183
 # Variance inflation over Poisson for weekly counting stats.
@@ -49,33 +49,27 @@ def _sum(lines: list[dict[str, float]]) -> dict[str, float]:
     return agg
 
 
-def cat_dist(agg: dict[str, float], cat: str) -> tuple[float, float]:
+def cat_dist(agg: dict[str, float], cat: str, inverse: set[str] = frozenset()) -> tuple[float, float]:
     """(mean, variance) of a weekly category total."""
-    if cat == "AVG":
-        ab, h = agg.get("AB", 0), agg.get("H", 0)
-        if not ab:
-            return 0.0, 1.0
-        avg = h / ab
-        return avg, max(avg * (1 - avg) / ab, 1e-6)
-    if cat == "ERA":
-        ip, er = agg.get("IP", 0), agg.get("ER", 0)
-        if not ip:
-            return 99.0, 1.0
-        return 9 * er / ip, 81 * er * DISPERSION / ip ** 2 + 1e-6
-    if cat == "WHIP":
-        ip, br = agg.get("IP", 0), agg.get("BB", 0) + agg.get("HA", 0)
-        if not ip:
-            return 9.0, 1.0
-        return br / ip, br * DISPERSION / ip ** 2 + 1e-6
-    mean = agg.get("SV", 0) + agg.get("HLD", 0) if cat == "SVH" else agg.get(cat, 0)
+    if cat in RATES:
+        num, den, mult, kind = RATES[cat]
+        n, d = num(agg), den(agg)
+        if not d:
+            # No playing time: worst possible value for the category.
+            return (99.0 if cat in inverse else 0.0), 1.0
+        r = mult * n / d
+        if kind == "binomial":
+            return r, max(r * (1 - r) / d, 1e-6)
+        return r, mult ** 2 * n * DISPERSION / d ** 2 + 1e-6
+    mean = cat_value(agg, cat)
     return mean, max(mean * DISPERSION, 0.25)
 
 
 def win_probs(mine: dict[str, float], theirs: dict[str, float], cfg) -> dict[str, float]:
     out = {}
     for c in cfg.categories:
-        m1, v1 = cat_dist(mine, c)
-        m2, v2 = cat_dist(theirs, c)
+        m1, v1 = cat_dist(mine, c, cfg.inverse_cats)
+        m2, v2 = cat_dist(theirs, c, cfg.inverse_cats)
         z = (m1 - m2) / math.sqrt(v1 + v2)
         if c in cfg.inverse_cats:
             z = -z
@@ -190,7 +184,7 @@ def optimize(league, team_id: str, opp_id: str | None, ctx: WeekContext | None =
         starters.setdefault(slots[i], []).append(p)
     my_agg = _sum([lines[p.id] for p in current])
     probs = win_probs(my_agg, opp_agg, cfg) if opp_agg else {}
-    totals = lambda agg: {c: cat_dist(agg, c)[0] for c in cfg.categories}
+    totals = lambda agg: {c: cat_dist(agg, c, cfg.inverse_cats)[0] for c in cfg.categories}
     return LineupResult(
         starters=starters,
         bench=[p for p in pool if p not in current],

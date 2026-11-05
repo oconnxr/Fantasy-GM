@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -67,7 +68,9 @@ class FantraxClient:
             )
         resp.raise_for_status()
         try:
-            data = resp.json()
+            # Fantrax sends UTF-8 without declaring it; requests would guess
+            # Latin-1 and garble emoji in team names.
+            data = json.loads(resp.content.decode("utf-8"))
         except ValueError as e:
             raise FantraxError(f"{endpoint}: response was not JSON") from e
         if isinstance(data, dict) and data.get("error"):
@@ -164,7 +167,8 @@ def parse_teams(league_info: Any, rosters: Any) -> dict[str, Team]:
     return teams
 
 
-def parse_draft_picks(raw: Any) -> list[DraftPick]:
+def parse_draft_picks(raw: Any, current_year: int = 0) -> list[DraftPick]:
+    """Future picks carry a year; picks in the upcoming draft only a slot."""
     picks: list[DraftPick] = []
     if not raw:
         return picks
@@ -173,7 +177,7 @@ def parse_draft_picks(raw: Any) -> list[DraftPick]:
             try:
                 owner = str(item.get("currentOwnerTeamId") or item.get("teamId") or "")
                 orig = str(item.get("originalOwnerTeamId") or owner)
-                year = int(item.get("year") or item.get("season") or 0)
+                year = int(item.get("year") or item.get("season") or current_year or 0)
                 rnd = int(item.get("round") or 0)
             except (TypeError, ValueError):
                 continue
@@ -182,6 +186,73 @@ def parse_draft_picks(raw: Any) -> list[DraftPick]:
             pick_no = item.get("pickInRound") or item.get("pick")
             picks.append(DraftPick(year, rnd, orig, owner, int(pick_no) if pick_no else None))
     return picks
+
+
+INVERSE_CATS = {"ERA", "WHIP", "L", "BBA", "HRA", "BS"}
+
+
+def parse_settings(league_info: Any) -> dict[str, Any]:
+    """League settings Fantrax reports: categories, roster limits, season."""
+    li = league_info or {}
+    out: dict[str, Any] = {}
+    cats = (li.get("scoringSystem") or {}).get("scoringCategories") or {}
+    if isinstance(cats.get("HITTING"), dict) and isinstance(cats.get("PITCHING"), dict):
+        out["hitting_cats"] = [str(c).upper() for c in cats["HITTING"]]
+        out["pitching_cats"] = [str(c).upper() for c in cats["PITCHING"]]
+        out["inverse_cats"] = {c for c in out["hitting_cats"] + out["pitching_cats"] if c in INVERSE_CATS}
+    if slots := parse_roster_slots(li):
+        out["slots"] = slots
+    ri = li.get("rosterInfo") or {}
+    try:
+        total, active = int(ri["maxTotalPlayers"]), int(ri["maxTotalActivePlayers"])
+        reserve = int(ri.get("maxTotalReservePlayers", 0))
+        out["bench"] = reserve
+        out["minors"] = max(0, total - active - reserve)
+    except (KeyError, TypeError, ValueError):
+        pass
+    if li.get("seasonYear"):
+        out["season"] = int(li["seasonYear"])
+    if li.get("leagueName"):
+        out["name"] = str(li["leagueName"])
+    return out
+
+
+def _parse_dt(s: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(s)[:19])
+    except ValueError:
+        return None
+
+
+def current_period(league_info: Any, today: date | None = None) -> int | None:
+    """Scoring period in progress today, else the next one to start."""
+    today = today or date.today()
+    periods = (league_info or {}).get("scoringPeriods") or []
+    upcoming = None
+    for p in periods:
+        start, end = _parse_dt(p.get("startDate", "")), _parse_dt(p.get("endDate", ""))
+        if not start or not end:
+            continue
+        if start.date() <= today <= end.date():
+            return int(p["number"])
+        if start.date() > today and (upcoming is None or int(p["number"]) < upcoming):
+            upcoming = int(p["number"])
+    return upcoming
+
+
+def opponent(league_info: Any, team_id: str, period: int | None) -> str | None:
+    for m in (league_info or {}).get("matchups") or []:
+        if period is not None and m.get("period") != period:
+            continue
+        for g in m.get("matchupList") or []:
+            home, away = (g.get("home") or {}).get("id"), (g.get("away") or {}).get("id")
+            if home == team_id:
+                return away
+            if away == team_id:
+                return home
+        if period is not None:
+            return None
+    return None
 
 
 def parse_roster_slots(league_info: Any) -> dict[str, int] | None:

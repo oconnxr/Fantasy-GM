@@ -7,7 +7,8 @@ players without an MLB projection. Column names are matched loosely so
 exports from other sites work as long as the usual headers are present.
 
 Files, all optional, read from ``data/``:
-  batters.csv    PA, AB, H, HR, RBI, SB (+ AVG accepted in place of H)
+  batters.csv    PA, AB, H, R, HR, RBI, SB, BB, HBP, SF (AVG / OBP accepted
+                 in place of H / walks)
   pitchers.csv   IP, ER or ERA, BB, H, W, SV, HLD, SO/K, GS, WHIP
   prospects.csv  Name, Org/Team, Pos, Age, FV, ETA, Level, Rank
   career.csv     Name, Team, AB, IP  (MLB career totals for minors eligibility)
@@ -74,14 +75,18 @@ def load_batters(path: Path) -> list[Player]:
         h = _num(row, "H")
         if not h and ab:
             h = _num(row, "AVG") * ab
+        pa = _num(row, "PA")
+        bb, hbp, sf = _num(row, "BB"), _num(row, "HBP"), _num(row, "SF")
+        if not (bb or hbp) and pa and _num(row, "OBP"):
+            bb = max(0.0, _num(row, "OBP") * (ab + sf + (pa - ab - sf)) - h)
         out.append(Player(
             id=_pid(row, "fg"),
             name=name,
             mlb_team=_str(row, "Team"),
             positions=[p for p in re.split(r"[/,]", _str(row, "POS", "Pos", "Position")) if p] ,
             age=_num(row, "Age", default=0) or None,
-            proj={"PA": _num(row, "PA"), "AB": ab, "H": h, "HR": _num(row, "HR"),
-                  "RBI": _num(row, "RBI"), "SB": _num(row, "SB")},
+            proj={"PA": pa, "AB": ab, "H": h, "R": _num(row, "R"), "HR": _num(row, "HR"),
+                  "RBI": _num(row, "RBI"), "SB": _num(row, "SB"), "BB": bb, "HBP": hbp, "SF": sf},
         ))
     return out
 
@@ -109,7 +114,7 @@ def load_pitchers(path: Path) -> list[Player]:
             mlb_team=_str(row, "Team"),
             positions=[pos.upper()],
             age=_num(row, "Age", default=0) or None,
-            proj={"IP": ip, "ER": er, "BB": bb, "HA": ha, "W": _num(row, "W"),
+            proj={"IP": ip, "ER": er, "BBA": bb, "HA": ha, "W": _num(row, "W"),
                   "SV": _num(row, "SV"), "HLD": _num(row, "HLD"),
                   "K": _num(row, "SO", "K"), "GS": gs},
         ))

@@ -21,7 +21,8 @@ def make_hitter(i: int, rng: random.Random, quality: float, age: float = 27, pos
         id=f"h{i}", name=f"Hitter {i:03d}", mlb_team="TST",
         positions=[pos or HIT_POS[i % len(HIT_POS)]], age=age,
         proj={"PA": pa, "AB": ab, "H": ab * avg, "HR": 8 + 30 * quality + rng.uniform(-3, 3),
-              "RBI": 40 + 60 * quality, "SB": rng.uniform(0, 25) * quality + 2},
+              "R": 45 + 55 * quality, "RBI": 40 + 60 * quality, "SB": rng.uniform(0, 25) * quality + 2,
+              "BB": pa * (0.06 + 0.05 * quality), "HBP": 5, "SF": 4},
     )
 
 
@@ -37,7 +38,7 @@ def make_pitcher(i: int, rng: random.Random, quality: float, sp: bool, age: floa
     return Player(
         id=f"p{i}", name=f"Pitcher {i:03d}", mlb_team="TST",
         positions=["SP" if sp else "RP"], age=age,
-        proj={"IP": ip, "ER": era * ip / 9, "BB": whip * ip * 0.3, "HA": whip * ip * 0.7,
+        proj={"IP": ip, "ER": era * ip / 9, "BBA": whip * ip * 0.3, "HA": whip * ip * 0.7,
               "W": w, "SV": sv, "HLD": hld, "K": k, "GS": gs},
     )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from .config import LeagueConfig
-from .models import MINORS, Player
+from .models import MINORS, Player, cat_value
 
 
 def totals(players: Iterable[Player], cfg: LeagueConfig, scale: float = 1.0) -> dict[str, float]:
@@ -14,18 +14,7 @@ def totals(players: Iterable[Player], cfg: LeagueConfig, scale: float = 1.0) -> 
     for p in players:
         for k, v in p.proj.items():
             agg[k] = agg.get(k, 0.0) + v * scale
-    out = {}
-    for c in cfg.categories:
-        if c == "AVG":
-            out[c] = agg.get("H", 0) / agg["AB"] if agg.get("AB") else 0.0
-        elif c == "ERA":
-            out[c] = 9 * agg.get("ER", 0) / agg["IP"] if agg.get("IP") else 0.0
-        elif c == "WHIP":
-            out[c] = (agg.get("BB", 0) + agg.get("HA", 0)) / agg["IP"] if agg.get("IP") else 0.0
-        elif c == "SVH":
-            out[c] = agg.get("SV", 0) + agg.get("HLD", 0)
-        else:
-            out[c] = agg.get(c, 0.0)
+    out = {c: cat_value(agg, c) for c in cfg.categories}
     return out
 
 

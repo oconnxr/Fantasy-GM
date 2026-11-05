@@ -89,3 +89,58 @@ def test_build_league_end_to_end(tmp_path):
     assert kid.fv == 60 and kid.dynasty_value > 0
     assert "Free Agent" in {p.name for p in league.free_agents()}
     assert league.teams["t1"].picks and league.pick_curve
+
+
+SETTINGS_INFO = {
+    "leagueName": "Test League", "seasonYear": 2027,
+    "scoringSystem": {"scoringCategories": {
+        "HITTING": {"R": {}, "HR": {}, "OBP": {}}, "PITCHING": {"ERA": {}, "K": {}, "WHIP": {}}}},
+    "rosterInfo": {"maxTotalPlayers": 48, "maxTotalActivePlayers": 19, "maxTotalReservePlayers": 14,
+                   "positionConstraints": {"INF": {"maxActive": 1}, "UT": {"maxActive": 2}}},
+    "scoringPeriods": [
+        {"number": 1, "startDate": "2027-03-24T12:00:00.0-0400", "endDate": "2027-03-29T03:59:59.0-0400"},
+        {"number": 2, "startDate": "2027-03-29T04:00:00.0-0400", "endDate": "2027-04-05T03:59:59.0-0400"}],
+    "matchups": [
+        {"period": 1, "matchupList": [{"home": {"id": "a"}, "away": {"id": "b"}}]},
+        {"period": 2, "matchupList": [{"home": {"id": "c"}, "away": {"id": "a"}}]}],
+}
+
+
+def test_parse_settings():
+    s = fantrax.parse_settings(SETTINGS_INFO)
+    assert s["hitting_cats"] == ["R", "HR", "OBP"]
+    assert s["pitching_cats"] == ["ERA", "K", "WHIP"]
+    assert s["inverse_cats"] == {"ERA", "WHIP"}
+    assert s["bench"] == 14 and s["minors"] == 15
+    assert s["slots"] == {"INF": 1, "UT": 2}
+    assert s["season"] == 2027 and s["name"] == "Test League"
+
+
+def test_current_period_and_opponent():
+    from datetime import date
+    assert fantrax.current_period(SETTINGS_INFO, date(2026, 11, 5)) == 1   # offseason: next up
+    assert fantrax.current_period(SETTINGS_INFO, date(2027, 4, 1)) == 2
+    assert fantrax.current_period(SETTINGS_INFO, date(2027, 10, 1)) is None
+    assert fantrax.opponent(SETTINGS_INFO, "a", 1) == "b"
+    assert fantrax.opponent(SETTINGS_INFO, "a", 2) == "c"
+    assert fantrax.opponent(SETTINGS_INFO, "z", 2) is None
+
+
+def test_current_draft_picks_get_season_year():
+    picks = fantrax.parse_draft_picks({"currentDraftPicks": [{"round": 1, "pick": 8, "teamId": "t1"}]}, 2027)
+    assert picks[0].year == 2027 and picks[0].pick_number == 8 and picks[0].owner_team_id == "t1"
+
+
+def test_obp_valued_from_walks(league, cfg):
+    import copy
+    from fantasy_gm.valuation import value_players
+    players = [copy.deepcopy(p) for p in league.players.values()]
+    base = next(p for p in players if p.id == "h1")
+    walker = copy.deepcopy(base)
+    walker.id, walker.proj["BB"] = "walker", base.proj["BB"] + 40
+    players.append(walker)
+    value_players(players, cfg)
+    base = next(p for p in players if p.id == "h1")
+    assert walker.stat("OBP") > base.stat("OBP")
+    assert walker.cat_values["OBP"] > base.cat_values["OBP"]
+    assert walker.cat_values["HR"] == base.cat_values["HR"]

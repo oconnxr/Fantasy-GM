@@ -25,7 +25,7 @@ def _load(ctx) -> League:
 
 
 def _fmt_cat(cat: str, v: float) -> str:
-    if cat == "AVG":
+    if cat in ("AVG", "OBP", "SLG", "OPS"):
         return f"{v:.3f}".lstrip("0") if v < 1 else f"{v:.3f}"
     if cat in ("ERA", "WHIP"):
         return f"{v:.2f}"
@@ -33,7 +33,7 @@ def _fmt_cat(cat: str, v: float) -> str:
 
 
 def _fmt_delta(cat: str, v: float) -> str:
-    if cat == "AVG":
+    if cat in ("AVG", "OBP", "SLG", "OPS"):
         return f"{v:+.4f}"
     if cat in ("ERA", "WHIP"):
         return f"{v:+.3f}"
@@ -265,7 +265,7 @@ def _week_ctx(league: League, two_start: str, games: tuple[str, ...]) -> WeekCon
 
 
 @main.command()
-@click.option("--vs", "vs", default=None, help="This week's opponent (team name or id).")
+@click.option("--vs", "vs", default=None, help="Opponent (default: this week's scheduled opponent).")
 @click.option("--two-start", default="", help="Comma-separated SPs with two starts this week.")
 @click.option("--games", multiple=True, help="Override games for a hitter: NAME=GAMES. Repeatable.")
 @click.option("--team", default=None)
@@ -274,7 +274,7 @@ def lineup(ctx, vs, two_start, games, team):
     """Optimal weekly lineup to win the most categories."""
     league = _load(ctx)
     tid = _my_team_id(league, team)
-    opp = league.find_team(vs).id if vs else None
+    opp = league.find_team(vs).id if vs else league.opponent_this_week(tid)
     res = optimize(league, tid, opp, _week_ctx(league, two_start, games))
     for slot, ps in res.starters.items():
         for p in ps:
@@ -286,11 +286,11 @@ def lineup(ctx, vs, two_start, games, team):
             click.echo(f"  {c:<5} you {_fmt_cat(c, res.my_totals[c]):>6}  them {_fmt_cat(c, res.opp_totals[c]):>6}"
                        f"  win {pr:5.0%}")
     else:
-        click.echo("\n(Pass --vs OPPONENT to optimise for this week's matchup.)")
+        click.echo("\n(No scheduled opponent found; pass --vs OPPONENT.)")
 
 
 @main.command()
-@click.option("--week", is_flag=True, help="Optimise for this week's matchup (needs --vs).")
+@click.option("--week", is_flag=True, help="Optimise for this week's matchup.")
 @click.option("--vs", "vs", default=None)
 @click.option("--prospects", "include_prospects", is_flag=True, help="Include prospects without MLB projections.")
 @click.option("--top", default=15, show_default=True)
@@ -302,9 +302,11 @@ def waivers(ctx, week, vs, include_prospects, top, two_start, team):
     league = _load(ctx)
     tid = _my_team_id(league, team)
     if week:
-        if not vs:
-            raise click.ClickException("--week needs --vs OPPONENT")
-        base, ideas = waivers_mod.week_targets(league, tid, league.find_team(vs).id,
+        opp = league.find_team(vs).id if vs else league.opponent_this_week(tid)
+        if not opp:
+            raise click.ClickException("No scheduled opponent found; pass --vs OPPONENT")
+        click.echo(f"Matchup: vs {league.teams[opp].name}")
+        base, ideas = waivers_mod.week_targets(league, tid, opp,
                                                _week_ctx(league, two_start, ()), top)
         click.echo(f"Current expected categories won: {base:.2f}")
         for fa, drop, gain in ideas:

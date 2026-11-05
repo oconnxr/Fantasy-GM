@@ -4,6 +4,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# Rate categories: (numerator, denominator, multiplier, kind). Hitter walks
+# are "BB"; pitcher walks allowed are "BBA" so team totals don't mix them.
+RATES = {
+    "AVG": (lambda s: s.get("H", 0), lambda s: s.get("AB", 0), 1.0, "binomial"),
+    "OBP": (lambda s: s.get("H", 0) + s.get("BB", 0) + s.get("HBP", 0),
+            lambda s: s.get("AB", 0) + s.get("BB", 0) + s.get("HBP", 0) + s.get("SF", 0),
+            1.0, "binomial"),
+    "ERA": (lambda s: s.get("ER", 0), lambda s: s.get("IP", 0), 9.0, "poisson"),
+    "WHIP": (lambda s: s.get("BBA", 0) + s.get("HA", 0), lambda s: s.get("IP", 0), 1.0, "poisson"),
+}
+COMPOSITE = {"SVH": ("SV", "HLD")}
+
+
+def cat_value(stats: dict[str, float], cat: str) -> float:
+    """A category's value from raw stat totals (one player's or a team's)."""
+    if cat in RATES:
+        num, den, mult, _ = RATES[cat]
+        d = den(stats)
+        return mult * num(stats) / d if d else 0.0
+    if cat in COMPOSITE:
+        return sum(stats.get(k, 0) for k in COMPOSITE[cat])
+    return stats.get(cat, 0.0)
+
+
 # Roster statuses, normalised from Fantrax's values.
 ACTIVE = "ACTIVE"
 RESERVE = "RESERVE"      # bench
@@ -18,8 +42,8 @@ class Player:
     mlb_team: str = ""
     positions: list[str] = field(default_factory=list)
     age: float | None = None
-    # Season projection. Hitters: PA, AB, H, HR, RBI, SB. Pitchers: IP, ER,
-    # BB, HA (hits allowed), W, SV, HLD, K, GS.
+    # Season projection. Hitters: PA, AB, H, R, HR, RBI, SB, BB, HBP, SF.
+    # Pitchers: IP, ER, BBA (walks allowed), HA (hits allowed), W, SV, HLD, K, GS.
     proj: dict[str, float] = field(default_factory=dict)
     # Prospect info (from a prospect list import).
     fv: float | None = None              # future value grade (20-80 scale)
@@ -50,16 +74,7 @@ class Player:
 
     def stat(self, cat: str) -> float:
         """Projected season value for a scoring category."""
-        p = self.proj
-        if cat == "AVG":
-            return p.get("H", 0) / p["AB"] if p.get("AB") else 0.0
-        if cat == "ERA":
-            return 9 * p.get("ER", 0) / p["IP"] if p.get("IP") else 0.0
-        if cat == "WHIP":
-            return (p.get("BB", 0) + p.get("HA", 0)) / p["IP"] if p.get("IP") else 0.0
-        if cat == "SVH":
-            return p.get("SV", 0) + p.get("HLD", 0)
-        return p.get(cat, 0.0)
+        return cat_value(self.proj, cat)
 
     def __str__(self) -> str:
         pos = "/".join(self.positions) or ("P" if self.is_pitcher else "H")

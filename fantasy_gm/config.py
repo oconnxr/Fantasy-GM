@@ -6,7 +6,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-HITTER_SLOTS = {"C", "1B", "2B", "3B", "SS", "OF", "UT", "CI", "MI", "IF", "DH"}
+HITTER_SLOTS = {"C", "1B", "2B", "3B", "SS", "OF", "UT", "CI", "MI", "IF", "INF", "DH"}
 PITCHER_SLOTS = {"SP", "RP", "P"}
 
 # Which player positions may fill each lineup slot.
@@ -20,6 +20,7 @@ SLOT_ELIGIBILITY: dict[str, set[str]] = {
     "CI": {"1B", "3B"},
     "MI": {"2B", "SS"},
     "IF": {"1B", "2B", "3B", "SS"},
+    "INF": {"1B", "2B", "3B", "SS", "INF"},
     "UT": {"C", "1B", "2B", "3B", "SS", "OF", "LF", "CF", "RF", "DH", "UT"},
     "DH": {"C", "1B", "2B", "3B", "SS", "OF", "LF", "CF", "RF", "DH", "UT"},
     "SP": {"SP"},
@@ -37,7 +38,7 @@ class LeagueConfig:
     teams: int = 16
     season: int = 2027
     my_team_id: str = ""
-    hitting_cats: list[str] = field(default_factory=lambda: ["HR", "AVG", "RBI", "SB"])
+    hitting_cats: list[str] = field(default_factory=lambda: ["R", "HR", "RBI", "SB", "OBP"])
     pitching_cats: list[str] = field(default_factory=lambda: ["ERA", "W", "SVH", "WHIP", "K"])
     inverse_cats: set[str] = field(default_factory=lambda: {"ERA", "WHIP"})
     slots: dict[str, int] = field(

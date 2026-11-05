@@ -15,7 +15,7 @@ def test_more_homers_is_more_value(league, cfg):
     base = next(p for p in players if p.id == "h1")
     assert clone.value > base.value
     assert clone.cat_values["HR"] > base.cat_values["HR"]
-    assert clone.cat_values["AVG"] == base.cat_values["AVG"]
+    assert clone.cat_values["OBP"] == base.cat_values["OBP"]
 
 
 def test_lower_era_is_more_value(league, cfg):

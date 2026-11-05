@@ -22,6 +22,11 @@ class League:
     pick_curve: list[float] = field(default_factory=list)
     projected_slot: dict[str, int] = field(default_factory=dict)
     unmatched: list[str] = field(default_factory=list)
+    league_info: dict | None = None
+
+    def opponent_this_week(self, team_id: str, today=None) -> str | None:
+        period = fantrax.current_period(self.league_info, today)
+        return fantrax.opponent(self.league_info, team_id, period)
 
     # ---- lookups ---------------------------------------------------------
 
@@ -138,13 +143,19 @@ def build_league(cfg: LeagueConfig, data_dir: Path = Path("data")) -> League:
         for pid, pos in fantrax.parse_eligibility(cache["league_info"]).items():
             if pid in league.players:
                 league.players[pid].positions = pos
+    league.league_info = cache["league_info"]
+    # Fantrax is the source of truth for settings it reports.
+    for key, val in fantrax.parse_settings(cache["league_info"]).items():
+        setattr(cfg, key, val)
     league.teams = fantrax.parse_teams(cache["league_info"], cache["rosters"])
-    league.picks = fantrax.parse_draft_picks(cache["draft_picks"])
+    if league.teams:
+        cfg.teams = len(league.teams)
+    league.picks = fantrax.parse_draft_picks(cache["draft_picks"], cfg.season)
+    if league.picks:
+        cfg.rookie_draft_rounds = max(p.round for p in league.picks)
     for pick in league.picks:
         if pick.owner_team_id in league.teams:
             league.teams[pick.owner_team_id].picks.append(pick)
-    if slots := fantrax.parse_roster_slots(cache["league_info"]):
-        cfg.slots = slots
 
     # Join projections onto Fantrax players (or use them directly if no sync).
     imports = projections.load_all(data_dir)

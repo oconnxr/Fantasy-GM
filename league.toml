@@ -1,26 +1,28 @@
 # League settings for the virtual GM.
-# Values marked TODO are guesses -- `fgm sync` overwrites roster slots from
-# Fantrax when the league info endpoint returns them; set the rest by hand.
+#
+# `fgm sync` reads categories, roster slots, roster limits, team count and
+# season from Fantrax and those values override this file. What remains
+# here is what Fantrax doesn't report.
 
 [league]
-name = "Dynasty League"
+name = "Langley/Denison Dynasty"
 fantrax_league_id = "fyizf75fmv8807pz"
 teams = 16
 season = 2027                 # projection season
-my_team_id = ""               # Fantrax team id; `fgm teams` lists them
+my_team_id = ""               # your Fantrax team id; `fgm teams` lists them
 
 [categories]
-# H2H categories. Lower-is-better categories are listed in `inverse`.
-hitting = ["HR", "AVG", "RBI", "SB"]
+# Overridden by Fantrax on sync. Current league scoring (5x5 H2H):
+hitting = ["R", "HR", "RBI", "SB", "OBP"]
 pitching = ["ERA", "W", "SVH", "WHIP", "K"]
 inverse = ["ERA", "WHIP"]
 
 [roster]
-# Active lineup slots. TODO: confirm against Fantrax roster settings.
-slots = { C = 1, "1B" = 1, "2B" = 1, "3B" = 1, SS = 1, OF = 3, UT = 1, SP = 5, RP = 3, P = 1 }
-bench = 6                     # TODO
-minors = 10                   # TODO
-injured_reserve = 3           # TODO
+# Overridden by Fantrax on sync (19 active / 14 reserve / 48 total).
+slots = { C = 1, "1B" = 1, "2B" = 1, "3B" = 1, SS = 1, INF = 1, OF = 3, UT = 2, SP = 3, RP = 2, P = 3 }
+bench = 14
+minors = 15
+injured_reserve = 3           # TODO: not reported by Fantrax
 
 [minors_eligibility]
 # A player keeps minor-league eligibility while at or under these MLB career
@@ -35,7 +37,7 @@ horizon_years = 5
 discount = { contending = 0.65, balanced = 0.80, rebuilding = 0.92 }
 # Current-season weight multiplier by mode (rebuilders care less about now).
 year0_weight = { contending = 1.25, balanced = 1.0, rebuilding = 0.6 }
-rookie_draft_rounds = 4
+rookie_draft_rounds = 3
 
 [team_modes]
 # Override the automatic contending/balanced/rebuilding call per team, e.g.
